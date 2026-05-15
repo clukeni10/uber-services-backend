@@ -5,11 +5,39 @@ import db from "../lib/db";
 
 const router = Router();
 
+router.post("/register", async (req: Request, res: Response) => {
+      try {
+            const { name, email, password } = req.body;
+
+            const [existing]: any = await db.query(
+                  "SELECT id FROM users WHERE email = ?",
+                  [email]
+            );
+
+            if (existing.length > 0) {
+                  res.status(400).json({ error: "Email já está em uso" });
+                  return;
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            const [result]: any = await db.query(
+                  "INSERT INTO users (name, email, password) VALUES(?, ?, ?)",
+                  [name, email, hashedPassword]
+            );
+
+            res.status(201).json({message: "Utilizador criado", id:result.insertId});
+      } catch(error){
+            res.status(500).json({message: "Erro ao criar utilizador"})
+      }
+})
+
+
 router.post("/login", async (req: Request, res: Response) => {
       try {
             const { email, password } = req.body;
 
-            const rows[]: any = await db.query(
+            const [rows]: any = await db.query(
                   "SELECT * FROM users WHERE email=?", [email]
             );
 
@@ -50,5 +78,7 @@ router.post("/login", async (req: Request, res: Response) => {
             res.status(500).json({ error: "Erro no servidor" });
       }
 });
+
+
 
 export default router;
