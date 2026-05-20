@@ -5,17 +5,18 @@ import db from "../lib/db";
 const router = Router();
 
 //Buscar dados do user logado
-router.get("/me", authMiddleware, async (req: Request, res: Response) => {
+router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const [rows]: any = await db.query("SELECT id, name, email, phone, address, brithday, role, image, created_at FROM users WHERE id=?", [req.user?.id]);
+    const [rows]: any = await db.query("SELECT id, name, email, phone, address, birthday, role, image, created_at FROM users WHERE id=?", [req.user?.id]);
 
-    if (rows.lenght === 0) {
+    if (rows.length === 0) {
       res.status(404).json({ error: "Utilizador não encontrado" });
       return;
     }
     res.json(rows[0]);
   } catch (error) {
-    res.status(50).json("Erro ao buscar utilizador");
+     console.log("ERRO:", error);
+    res.status(500).json("Erro ao buscar utilizador");
   }
 })
 
