@@ -3,7 +3,7 @@ import { authMiddleware, AuthRequest } from "../middleware/auth";
 import db from "../lib/db";
 
 const router = Router();
-
+ 
 //Buscar dados do user logado
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {

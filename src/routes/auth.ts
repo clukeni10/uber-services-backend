@@ -6,8 +6,9 @@ import db from "../lib/db";
 const router = Router();
 
 router.post("/register", async (req: Request, res: Response) => {
+        console.log("BODY:", req.body); // ← adiciona isto
       try {
-            const { name, email, password } = req.body;
+            const { name, email, password, role } = req.body;
 
             const [existing]: any = await db.query(
                   "SELECT id FROM users WHERE email = ?",
@@ -22,16 +23,23 @@ router.post("/register", async (req: Request, res: Response) => {
             const hashedPassword = await bcrypt.hash(password, 10);
 
             const [result]: any = await db.query(
-                  "INSERT INTO users (name, email, password) VALUES(?, ?, ?)",
-                  [name, email, hashedPassword]
+                  "INSERT INTO users (name, email, password, role) VALUES(?, ?, ?, ?)",
+                  [name, email, hashedPassword, role ?? "client"]
             );
 
-            res.status(201).json({message: "Utilizador criado", id:result.insertId});
-      } catch(error){
-            res.status(500).json({message: "Erro ao criar utilizador"})
-      }
-})
+            // Se for worker, cria o worker_profile automaticamente
+            if (role === "worker") {
+                  await db.query(
+                        "INSERT INTO worker_profiles (user_id) VALUES (?)",
+                        [result.insertId]
+                  );
+            }
 
+            res.status(201).json({ message: "Utilizador criado", id: result.insertId });
+      } catch (error) {
+            res.status(500).json({ message: "Erro ao criar utilizador" });
+      }
+});
 
 router.post("/login", async (req: Request, res: Response) => {
       try {
