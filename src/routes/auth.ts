@@ -6,7 +6,7 @@ import db from "../lib/db";
 const router = Router();
 
 router.post("/register", async (req: Request, res: Response) => {
-        console.log("BODY:", req.body); // ← adiciona isto
+        console.log("BODY:", req.body); 
       try {
             const { name, email, password, role } = req.body;
 
@@ -37,6 +37,7 @@ router.post("/register", async (req: Request, res: Response) => {
 
             res.status(201).json({ message: "Utilizador criado", id: result.insertId });
       } catch (error) {
+            console.error("❌ ERRO DETALHADO NO BACKEND:", error);
             res.status(500).json({ message: "Erro ao criar utilizador" });
       }
 });
