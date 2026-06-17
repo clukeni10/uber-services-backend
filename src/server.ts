@@ -6,6 +6,7 @@ import authRouter from "./routes/auth";
 import workersRouter from "./routes/workers";
 import servicesRouter from "./routes/services";
 import categoriesRouter from "./routes/categories";
+import paymentsRouter from "./routes/payments";
 
 dotenv.config();
 
@@ -27,7 +28,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/workers", workersRouter);
 app.use("/api/services", servicesRouter);
 app.use("/api/categories", categoriesRouter);
-
+app.use("/api/payments", paymentsRouter);
 
 app.listen(PORT, () => {
   console.log(`Servidor a correr em http://localhost:${PORT}`);

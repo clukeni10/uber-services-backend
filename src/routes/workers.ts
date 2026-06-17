@@ -6,6 +6,7 @@ const router = Router();
 
 // GET /api/workers/me — TEM DE VIR PRIMEIRO
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
+      console.log("GET /worker chamado, user id:", req.user?.id);
 
     try {
         const [rows]: any = await db.query(
