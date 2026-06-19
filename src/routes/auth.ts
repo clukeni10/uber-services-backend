@@ -6,7 +6,7 @@ import db from "../lib/db";
 const router = Router();
 
 router.post("/register", async (req: Request, res: Response) => {
-        console.log("BODY:", req.body); 
+      console.log("BODY:", req.body);
       try {
             const { name, email, password, role } = req.body;
 
@@ -54,8 +54,12 @@ router.post("/login", async (req: Request, res: Response) => {
                   res.status(401).json({ error: "Email ou password incorretos" });
                   return;
             }
-
             const user = rows[0];
+
+            // ADICIONA ESTES LOGS PARA DETETAR O ERRO:
+            console.log("Password digitada no formulário:", password);
+            console.log("Hash que veio da Base de Dados:", user.password);
+            console.log("O tamanho da Hash na BD é:", user.password.length);
 
             const passwordMatch = await bcrypt.compare(password, user.password);
 

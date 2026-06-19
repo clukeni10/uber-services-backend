@@ -7,6 +7,7 @@ import workersRouter from "./routes/workers";
 import servicesRouter from "./routes/services";
 import categoriesRouter from "./routes/categories";
 import paymentsRouter from "./routes/payments";
+import adminRouter from "./routes/admin";
 
 dotenv.config();
 
@@ -29,7 +30,10 @@ app.use("/api/workers", workersRouter);
 app.use("/api/services", servicesRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/categories", categoriesRouter);
+app.use("/api/admin", adminRouter);
 
 app.listen(PORT, () => {
   console.log(`Servidor a correr em http://localhost:${PORT}`);
 });
+
