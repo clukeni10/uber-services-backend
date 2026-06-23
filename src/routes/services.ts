@@ -8,7 +8,23 @@ const router = Router();
 router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { worker_id, category_id, description, scheduled_at } = req.body;
-    const client_id = req.user?.id;
+    const client_id = req.user?.id; 
+
+    if (!description || description.trim().length < 10) {
+  res.status(400).json({ error: "A descrição deve ter pelo menos 10 caracteres." });
+  return;
+}
+
+if (!scheduled_at) {
+  res.status(400).json({ error: "A data e hora são obrigatórias." });
+  return;
+}
+
+const scheduledDate = new Date(scheduled_at);
+if (scheduledDate <= new Date()) {
+  res.status(400).json({ error: "A data e hora têm de ser no futuro." });
+  return;
+}
 
     const [service]: any = await db.query(
       `INSERT INTO services (client_id, worker_id, category_id, description, scheduled_at, status)

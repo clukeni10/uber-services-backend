@@ -85,6 +85,72 @@ router.get("/category/:name", authMiddleware, async (req: AuthRequest, res: Resp
     }
 });
 
+// GET /api/workers/stats
+router.get("/stats", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const worker_id = req.user?.id;
+
+    const [[services]]: any = await db.query(`
+      SELECT
+        COUNT(*) as total_services,
+        SUM(status = 'pending')   as pending,
+        SUM(status = 'accepted')  as accepted,
+        SUM(status = 'active')    as active,
+        SUM(status = 'completed') as completed,
+        SUM(status = 'cancelled') as cancelled
+      FROM services
+      WHERE worker_id = ?
+    `, [worker_id]);
+
+    const [[earnings]]: any = await db.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN worker_earnings ELSE 0 END), 0) as total_earnings,
+        COALESCE(SUM(CASE WHEN status = 'paid' AND MONTH(paid_at) = MONTH(NOW()) AND YEAR(paid_at) = YEAR(NOW()) THEN worker_earnings ELSE 0 END), 0) as month_earnings
+      FROM payments
+      WHERE worker_id = ?
+    `, [worker_id]);
+
+    const [[rating]]: any = await db.query(`
+      SELECT COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as total_reviews
+      FROM reviews
+      WHERE worker_id = ?
+    `, [worker_id]);
+
+    const [recentServices]: any = await db.query(`
+      SELECT s.id, s.description, s.status, s.created_at, s.started_at,
+             u.name as client_name, u.image as client_image
+      FROM services s
+      INNER JOIN users u ON u.id = s.client_id
+      WHERE s.worker_id = ?
+      ORDER BY s.created_at DESC
+      LIMIT 5
+    `, [worker_id]);
+
+    res.json({
+      services: {
+        total:     services.total_services,
+        pending:   services.pending,
+        accepted:  services.accepted,
+        active:    services.active,
+        completed: services.completed,
+        cancelled: services.cancelled,
+      },
+      earnings: {
+        total: parseFloat(earnings.total_earnings),
+        month: parseFloat(earnings.month_earnings),
+      },
+      rating: {
+        avg:     parseFloat(earnings.avg_rating ?? 0),
+        reviews: rating.total_reviews,
+      },
+      recentServices,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Erro ao buscar estatísticas" });
+  }
+});
+
 
 // GET /api/workers/:id
 router.get("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {

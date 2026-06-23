@@ -116,4 +116,29 @@ router.get("/client", authMiddleware, async (req: AuthRequest, res: Response) =>
   }
 });
 
+// GET /api/payments/invoices/worker
+router.get("/invoices/worker", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT i.*,
+             uc.name as client_name, uc.email as client_email, uc.phone as client_phone, uc.address as client_address,
+             uw.name as worker_name, uw.email as worker_email, uw.phone as worker_phone,
+             wp.specialty,
+             s.scheduled_at, s.description,
+             c.name as category_name
+      FROM invoices i
+      INNER JOIN users uc ON uc.id = i.client_id
+      INNER JOIN users uw ON uw.id = i.worker_id
+      LEFT JOIN worker_profiles wp ON wp.user_id = i.worker_id
+      INNER JOIN services s ON s.id = i.service_id
+      LEFT JOIN categories c ON c.id = s.category_id
+      WHERE i.worker_id = ?
+      ORDER BY i.issued_at DESC
+    `, [req.user?.id]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao buscar faturas" });
+  }
+});
+
 export default router;
