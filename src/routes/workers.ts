@@ -151,6 +151,55 @@ router.get("/stats", authMiddleware, async (req: AuthRequest, res: Response) => 
   }
 });
 
+// GET /api/workers/filters
+router.get("/filters", async (req: AuthRequest, res: Response) => {
+  try {
+    // 1. Busca especialidades diretamente dos perfis existentes
+    const [specialtiesRows]: any = await db.query(
+      "SELECT DISTINCT specialty FROM worker_profiles WHERE specialty IS NOT NULL AND specialty != ''"
+    );
+    
+    // 2. Busca os endereços brutos de quem é worker
+    const [addressesRows]: any = await db.query(
+      "SELECT DISTINCT address FROM users WHERE role = 'worker' AND address IS NOT NULL AND address != ''"
+    );
+
+    // 3. Formata as Categorias (Primeira letra maiúscula para ficar bonito na UI)
+    const categories = (specialtiesRows as any[]).map(row => {
+      const original = row.specialty;
+      const formatado = original.charAt(0).toUpperCase() + original.slice(1).toLowerCase();
+      return {
+        label: formatado, // Ex: "Electricista"
+        value: original.toLowerCase() // Ex: "electricista" (combina com o banco)
+      };
+    });
+
+    // 4. Trata e limpa os Municípios de Luanda
+    const citiesMap = new Map();
+    
+    (addressesRows as any[]).forEach(row => {
+      // Se o endereço for "Viana, Luanda", separa pela vírgula e pega o "Viana"
+      const parts = row.address.split(",");
+      const rawCity = parts[0].trim(); 
+      
+      if (rawCity) {
+        const label = rawCity.charAt(0).toUpperCase() + rawCity.slice(1).toLowerCase();
+        const value = rawCity.toLowerCase();
+        
+        // O Map evita duplicados automaticamente
+        citiesMap.set(value, { label, value });
+      }
+    });
+
+    const cities = Array.from(citiesMap.values());
+
+    // Retorna a estrutura exata que o frontend espera
+    res.json({ categories, cities });
+  } catch (error) {
+    console.error("Erro na rota de filtros:", error);
+    res.status(500).json({ error: "Erro ao carregar filtros dinâmicos" });
+  }
+});
 
 // GET /api/workers/:id
 router.get("/:id", authMiddleware, async (req: AuthRequest, res: Response) => {
@@ -224,5 +273,7 @@ router.get("/", authMiddleware, async (req: AuthRequest, res: Response) => {
         res.status(500).json({ error: "Erro ao buscar profissionais" });
     }
 });
+
+
 
 export default router;

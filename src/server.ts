@@ -8,6 +8,7 @@ import servicesRouter from "./routes/services";
 import categoriesRouter from "./routes/categories";
 import paymentsRouter from "./routes/payments";
 import adminRouter from "./routes/admin";
+import reviewsRouter from "./routes/reviews";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/reviews", reviewsRouter);
 
 app.listen(PORT, () => {
   console.log(`Servidor a correr em http://localhost:${PORT}`);

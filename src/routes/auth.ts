@@ -6,13 +6,19 @@ import db from "../lib/db";
 const router = Router();
 
 router.post("/register", async (req: Request, res: Response) => {
-      console.log("BODY:", req.body);
+      console.log("BODY REGISTER:", req.body);
       try {
             const { name, email, password, role } = req.body;
 
+            // Validação simples para evitar quebras no bcrypt
+            if (!email || !password) {
+                  res.status(400).json({ error: "Email e password são obrigatórios" });
+                  return;
+            }
+
             const [existing]: any = await db.query(
                   "SELECT id FROM users WHERE email = ?",
-                  [email]
+                  [email] 
             );
 
             if (existing.length > 0) {
@@ -27,7 +33,6 @@ router.post("/register", async (req: Request, res: Response) => {
                   [name, email, hashedPassword, role ?? "client"]
             );
 
-            // Se for worker, cria o worker_profile automaticamente
             if (role === "worker") {
                   await db.query(
                         "INSERT INTO worker_profiles (user_id) VALUES (?)",
@@ -37,14 +42,21 @@ router.post("/register", async (req: Request, res: Response) => {
 
             res.status(201).json({ message: "Utilizador criado", id: result.insertId });
       } catch (error) {
-            console.error("❌ ERRO DETALHADO NO BACKEND:", error);
+            console.error("❌ ERRO DETALHADO NO REGISTER:", error);
             res.status(500).json({ message: "Erro ao criar utilizador" });
       }
 });
 
 router.post("/login", async (req: Request, res: Response) => {
+      console.log("BODY LOGIN:", req.body);
       try {
             const { email, password } = req.body;
+
+            // Evita que o bcrypt quebre se o frontend enviar campos vazios
+            if (!email || !password) {
+                  res.status(400).json({ error: "Email e password são obrigatórios" });
+                  return;
+            }
 
             const [rows]: any = await db.query(
                   "SELECT * FROM users WHERE email=?", [email]
@@ -56,10 +68,14 @@ router.post("/login", async (req: Request, res: Response) => {
             }
             const user = rows[0];
 
-            // ADICIONA ESTES LOGS PARA DETETAR O ERRO:
             console.log("Password digitada no formulário:", password);
             console.log("Hash que veio da Base de Dados:", user.password);
-            console.log("O tamanho da Hash na BD é:", user.password.length);
+
+            // Se a senha na BD for nula ou inválida, gera erro controlado
+            if (!user.password) {
+                  res.status(401).json({ error: "Dados de utilizador corrompidos" });
+                  return;
+            }
 
             const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -68,13 +84,20 @@ router.post("/login", async (req: Request, res: Response) => {
                   return;
             }
 
+            // Fallback caso esqueça de configurar o arquivo .env
+            const secret = process.env.JWT_SECRET || "SUPER_SECRET_FALLBACK_KEY_123";
+            
+            if (!process.env.JWT_SECRET) {
+                  console.warn("⚠️ AVISO: JWT_SECRET não está definido no .env! Usando chave de emergência.");
+            }
+
             const token = jwt.sign(
                   {
                         id: user.id,
                         email: user.email,
                         role: user.role,
                   },
-                  process.env.JWT_SECRET as string,
+                  secret,
                   { expiresIn: "7d" }
             );
 
@@ -88,10 +111,10 @@ router.post("/login", async (req: Request, res: Response) => {
                   },
             });
       } catch (error) {
-            res.status(500).json({ error: "Erro no servidor" });
+            // ESSA LINHA É A MAIS IMPORTANTE: Vai mostrar o erro real no terminal do VS Code/Node
+            console.error("❌ ERRO DETALHADO NO LOGIN:", error);
+            res.status(500).json({ error: "Erro interno no servidor" });
       }
 });
-
-
 
 export default router;
