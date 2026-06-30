@@ -4,32 +4,42 @@ import db from "../lib/db";
 
 const router = Router();
 
-// POST /api/services — cliente cria pedido (SEM pagamento)
+// POST /api/services
 router.post("/", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { worker_id, category_id, description, scheduled_at } = req.body;
-    const client_id = req.user?.id; 
+    const { worker_id, category_id, description, scheduled_at, address, contact_phone } = req.body;
+    const client_id = req.user?.id;
 
     if (!description || description.trim().length < 10) {
-  res.status(400).json({ error: "A descrição deve ter pelo menos 10 caracteres." });
-  return;
-}
+      res.status(400).json({ error: "A descrição deve ter pelo menos 10 caracteres." });
+      return;
+    }
 
-if (!scheduled_at) {
-  res.status(400).json({ error: "A data e hora são obrigatórias." });
-  return;
-}
+    if (!scheduled_at) {
+      res.status(400).json({ error: "A data e hora são obrigatórias." });
+      return;
+    }
 
-const scheduledDate = new Date(scheduled_at);
-if (scheduledDate <= new Date()) {
-  res.status(400).json({ error: "A data e hora têm de ser no futuro." });
-  return;
-}
+    const scheduledDate = new Date(scheduled_at);
+    if (scheduledDate <= new Date()) {
+      res.status(400).json({ error: "A data e hora têm de ser no futuro." });
+      return;
+    }
+
+    if (!address || address.trim().length < 5) {
+      res.status(400).json({ error: "A morada do serviço é obrigatória." });
+      return;
+    }
+
+    if (!contact_phone || contact_phone.trim().length < 9) {
+      res.status(400).json({ error: "O contacto é obrigatório." });
+      return;
+    }
 
     const [service]: any = await db.query(
-      `INSERT INTO services (client_id, worker_id, category_id, description, scheduled_at, status)
-       VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [client_id, worker_id, category_id ?? null, description, scheduled_at]
+      `INSERT INTO services (client_id, worker_id, category_id, description, scheduled_at, address, contact_phone, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [client_id, worker_id, category_id ?? null, description, scheduled_at, address, contact_phone]
     );
 
     res.status(201).json({ message: "Pedido enviado com sucesso", service_id: service.insertId });
@@ -46,7 +56,7 @@ router.get("/worker", authMiddleware, async (req: AuthRequest, res: Response) =>
 
     let query = `
       SELECT 
-        s.id, s.description, s.scheduled_at, s.status, s.created_at, s.started_at, s.completed_at,
+        s.id, s.description, s.scheduled_at, s.status, s.created_at, s.started_at, s.completed_at, s.address, s.contact_phone,
         u.id as client_id, u.name as client_name, u.image as client_image, u.phone as client_phone,
         c.name as category_name
       FROM services s
@@ -77,7 +87,7 @@ router.get("/client", authMiddleware, async (req: AuthRequest, res: Response) =>
 
     let query = `
       SELECT 
-        s.id, s.description, s.scheduled_at, s.status, s.created_at, s.started_at, s.completed_at,
+        s.id, s.description, s.scheduled_at, s.status, s.created_at, s.started_at, s.completed_at, s.address, s.contact_phone,
         u.id as worker_id, u.name as worker_name, u.image as worker_image, u.phone as worker_phone,
         wp.specialty, wp.hourly_rate,
         p.id as payment_id, p.amount, p.status as payment_status,

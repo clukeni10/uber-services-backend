@@ -199,4 +199,259 @@ router.get("/invoices/all", authMiddleware, adminOnly, async (req: AuthRequest, 
   }
 });
 
+// GET /api/admin/payments/overview — visão financeira completa
+router.get("/payments/overview", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    // Totais gerais
+    const [[totals]]: any = await db.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount END), 0)          as total_revenue,
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN platform_fee END), 0)    as total_fees,
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN worker_earnings END), 0) as total_worker_earnings,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END)                          as total_paid,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END)                       as total_pending,
+        COUNT(*)                                                              as total
+      FROM payments
+    `);
+
+    // Faturação por mês (últimos 6 meses)
+    const [monthlyRevenue]: any = await db.query(`
+      SELECT
+        DATE_FORMAT(paid_at, '%Y-%m') as month,
+        DATE_FORMAT(paid_at, '%b %Y') as label,
+        SUM(amount)          as revenue,
+        SUM(platform_fee)    as fees,
+        SUM(worker_earnings) as worker_earnings,
+        COUNT(*)             as count
+      FROM payments
+      WHERE status = 'paid'
+        AND paid_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+      GROUP BY month, label
+      ORDER BY month ASC
+    `);
+
+    // Faturação por categoria
+    const [byCategory]: any = await db.query(`
+      SELECT
+        c.name as category,
+        COUNT(p.id)          as total_services,
+        SUM(p.amount)        as revenue,
+        SUM(p.platform_fee)  as fees
+      FROM payments p
+      INNER JOIN services s ON s.id = p.service_id
+      LEFT JOIN categories c ON c.id = s.category_id
+      WHERE p.status = 'paid'
+      GROUP BY c.name
+      ORDER BY revenue DESC
+    `);
+
+    // Faturação por cidade (address do worker)
+    const [byCity]: any = await db.query(`
+      SELECT
+        COALESCE(u.address, 'Sem localização') as city,
+        COUNT(p.id)   as total_services,
+        SUM(p.amount) as revenue
+      FROM payments p
+      INNER JOIN users u ON u.id = p.worker_id
+      WHERE p.status = 'paid'
+      GROUP BY city
+      ORDER BY revenue DESC
+      LIMIT 10
+    `);
+
+    // Top workers que mais faturam
+    const [topWorkers]: any = await db.query(`
+      SELECT
+        u.id, u.name, u.image,
+        wp.specialty,
+        COUNT(p.id)          as total_services,
+        SUM(p.worker_earnings) as total_earned
+      FROM payments p
+      INNER JOIN users u ON u.id = p.worker_id
+      LEFT JOIN worker_profiles wp ON wp.user_id = p.worker_id
+      WHERE p.status = 'paid'
+      GROUP BY u.id, u.name, u.image, wp.specialty
+      ORDER BY total_earned DESC
+      LIMIT 5
+    `);
+
+    // Workers que menos faturam (com pelo menos 1 serviço)
+    const [bottomWorkers]: any = await db.query(`
+      SELECT
+        u.id, u.name, u.image,
+        wp.specialty,
+        COUNT(p.id)            as total_services,
+        SUM(p.worker_earnings) as total_earned
+      FROM payments p
+      INNER JOIN users u ON u.id = p.worker_id
+      LEFT JOIN worker_profiles wp ON wp.user_id = p.worker_id
+      WHERE p.status = 'paid'
+      GROUP BY u.id, u.name, u.image, wp.specialty
+      ORDER BY total_earned ASC
+      LIMIT 5
+    `);
+
+    // Método de pagamento mais usado
+    const [byMethod]: any = await db.query(`
+      SELECT
+        method,
+        COUNT(*) as count,
+        SUM(amount) as revenue
+      FROM payments
+      WHERE status = 'paid'
+      GROUP BY method
+      ORDER BY count DESC
+    `);
+
+    res.json({
+      totals: {
+        revenue:          parseFloat(totals.total_revenue),
+        fees:             parseFloat(totals.total_fees),
+        worker_earnings:  parseFloat(totals.total_worker_earnings),
+        paid:             totals.total_paid,
+        pending:          totals.total_pending,
+        total:            totals.total,
+      },
+      monthlyRevenue: monthlyRevenue.map((r: any) => ({
+        ...r,
+        revenue:          parseFloat(r.revenue),
+        fees:             parseFloat(r.fees),
+        worker_earnings:  parseFloat(r.worker_earnings),
+      })),
+      byCategory: byCategory.map((r: any) => ({
+        ...r,
+        revenue: parseFloat(r.revenue),
+        fees:    parseFloat(r.fees),
+      })),
+      byCity: byCity.map((r: any) => ({
+        ...r,
+        revenue: parseFloat(r.revenue),
+      })),
+      topWorkers: topWorkers.map((r: any) => ({
+        ...r,
+        total_earned: parseFloat(r.total_earned),
+      })),
+      bottomWorkers: bottomWorkers.map((r: any) => ({
+        ...r,
+        total_earned: parseFloat(r.total_earned),
+      })),
+      byMethod: byMethod.map((r: any) => ({
+        ...r,
+        revenue: parseFloat(r.revenue),
+      })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao buscar dados financeiros" });
+  }
+});
+
+// GET /api/admin/services/all — todos os serviços com detalhes
+router.get("/services/all", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, search } = req.query;
+
+    let query = `
+      SELECT
+        s.id, s.description, s.status, s.scheduled_at, s.created_at, s.started_at, s.completed_at,
+        uc.id as client_id, uc.name as client_name, uc.email as client_email,
+        uw.id as worker_id, uw.name as worker_name, uw.email as worker_email,
+        wp.specialty,
+        c.name as category_name,
+        p.amount, p.status as payment_status, p.method
+      FROM services s
+      INNER JOIN users uc ON uc.id = s.client_id
+      INNER JOIN users uw ON uw.id = s.worker_id
+      LEFT JOIN worker_profiles wp ON wp.user_id = s.worker_id
+      LEFT JOIN categories c ON c.id = s.category_id
+      LEFT JOIN payments p ON p.service_id = s.id
+      WHERE 1=1
+    `;
+
+    const params: any[] = [];
+
+    if (status) {
+      query += " AND s.status = ?";
+      params.push(status);
+    }
+
+    if (search) {
+      query += " AND (uc.name LIKE ? OR uw.name LIKE ? OR s.description LIKE ?)";
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    query += " ORDER BY s.created_at DESC";
+
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao buscar serviços" });
+  }
+});
+
+// GET /api/admin/reports/data — dados para relatórios exportáveis
+router.get("/reports/data", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const { type } = req.query;
+
+    if (type === "payments") {
+      const [rows] = await db.query(`
+        SELECT
+          p.reference, p.amount, p.platform_fee, p.worker_earnings,
+          p.method, p.status, p.paid_at, p.created_at,
+          uc.name as cliente, uc.email as email_cliente,
+          uw.name as profissional, wp.specialty as especialidade,
+          c.name as categoria, s.description as descricao
+        FROM payments p
+        INNER JOIN users uc ON uc.id = p.client_id
+        INNER JOIN users uw ON uw.id = p.worker_id
+        LEFT JOIN worker_profiles wp ON wp.user_id = p.worker_id
+        INNER JOIN services s ON s.id = p.service_id
+        LEFT JOIN categories c ON c.id = s.category_id
+        ORDER BY p.created_at DESC
+      `);
+      res.json(rows);
+    } else if (type === "services") {
+      const [rows] = await db.query(`
+        SELECT
+          s.id, s.description as descricao, s.status, s.scheduled_at,
+          s.started_at, s.completed_at, s.created_at,
+          uc.name as cliente, uc.email as email_cliente,
+          uw.name as profissional, wp.specialty as especialidade,
+          c.name as categoria,
+          p.amount as valor, p.status as status_pagamento
+        FROM services s
+        INNER JOIN users uc ON uc.id = s.client_id
+        INNER JOIN users uw ON uw.id = s.worker_id
+        LEFT JOIN worker_profiles wp ON wp.user_id = s.worker_id
+        LEFT JOIN categories c ON c.id = s.category_id
+        LEFT JOIN payments p ON p.service_id = s.id
+        ORDER BY s.created_at DESC
+      `);
+      res.json(rows);
+    } else if (type === "workers") {
+      const [rows] = await db.query(`
+        SELECT
+          u.name as profissional, u.email, u.phone as telefone, u.address as cidade,
+          wp.specialty as especialidade, wp.hourly_rate as preco_hora,
+          wp.rating_avg as avaliacao, wp.total_earnings as ganhos_totais,
+          COUNT(s.id) as total_servicos,
+          COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as servicos_concluidos
+        FROM users u
+        INNER JOIN worker_profiles wp ON wp.user_id = u.id
+        LEFT JOIN services s ON s.worker_id = u.id
+        WHERE u.role = 'worker'
+        GROUP BY u.id, u.name, u.email, u.phone, u.address,
+                 wp.specialty, wp.hourly_rate, wp.rating_avg, wp.total_earnings
+        ORDER BY ganhos_totais DESC
+      `);
+      res.json(rows);
+    } else {
+      res.status(400).json({ error: "Tipo de relatório inválido" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao gerar relatório" });
+  }
+});
+
 export default router;

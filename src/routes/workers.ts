@@ -35,7 +35,106 @@ router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
     }
 });
 
+// GET /api/workers/earnings
+router.get("/earnings", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const worker_id = req.user?.id;
 
+    // Totais gerais
+    const [[totals]]: any = await db.query(`
+      SELECT
+        COALESCE(SUM(amount), 0)          as gross_total,
+        COALESCE(SUM(platform_fee), 0)    as fees_total,
+        COALESCE(SUM(worker_earnings), 0) as net_total,
+        COUNT(*)                          as total_payments
+      FROM payments
+      WHERE worker_id = ? AND status = 'paid'
+    `, [worker_id]);
+
+    // Ganhos do mês atual
+    const [[currentMonth]]: any = await db.query(`
+      SELECT
+        COALESCE(SUM(amount), 0)          as gross,
+        COALESCE(SUM(platform_fee), 0)    as fees,
+        COALESCE(SUM(worker_earnings), 0) as net,
+        COUNT(*)                          as count
+      FROM payments
+      WHERE worker_id = ? AND status = 'paid'
+        AND MONTH(paid_at) = MONTH(NOW()) AND YEAR(paid_at) = YEAR(NOW())
+    `, [worker_id]);
+
+    // Ganhos do mês anterior (para comparação)
+    const [[lastMonth]]: any = await db.query(`
+      SELECT COALESCE(SUM(worker_earnings), 0) as net
+      FROM payments
+      WHERE worker_id = ? AND status = 'paid'
+        AND MONTH(paid_at) = MONTH(NOW() - INTERVAL 1 MONTH)
+        AND YEAR(paid_at) = YEAR(NOW() - INTERVAL 1 MONTH)
+    `, [worker_id]);
+
+    // Histórico mensal (últimos 6 meses)
+    const [monthly]: any = await db.query(`
+      SELECT
+        DATE_FORMAT(paid_at, '%Y-%m') as month,
+        DATE_FORMAT(paid_at, '%b') as label,
+        SUM(amount)          as gross,
+        SUM(platform_fee)    as fees,
+        SUM(worker_earnings) as net,
+        COUNT(*)              as count
+      FROM payments
+      WHERE worker_id = ? AND status = 'paid'
+        AND paid_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+      GROUP BY month, label
+      ORDER BY month ASC
+    `, [worker_id]);
+
+    // Histórico de pagamentos detalhado
+    const [history]: any = await db.query(`
+      SELECT
+        p.id, p.reference, p.amount, p.platform_fee, p.worker_earnings,
+        p.method, p.paid_at,
+        uc.name as client_name, uc.image as client_image,
+        s.description, c.name as category_name
+      FROM payments p
+      INNER JOIN users uc ON uc.id = p.client_id
+      INNER JOIN services s ON s.id = p.service_id
+      LEFT JOIN categories c ON c.id = s.category_id
+      WHERE p.worker_id = ? AND p.status = 'paid'
+      ORDER BY p.paid_at DESC
+      LIMIT 20
+    `, [worker_id]);
+
+    const monthGrowth = lastMonth.net > 0
+      ? ((parseFloat(currentMonth.net) - parseFloat(lastMonth.net)) / parseFloat(lastMonth.net)) * 100
+      : 0;
+
+    res.json({
+      totals: {
+        gross:    parseFloat(totals.gross_total),
+        fees:     parseFloat(totals.fees_total),
+        net:      parseFloat(totals.net_total),
+        payments: totals.total_payments,
+      },
+      currentMonth: {
+        gross: parseFloat(currentMonth.gross),
+        fees:  parseFloat(currentMonth.fees),
+        net:   parseFloat(currentMonth.net),
+        count: currentMonth.count,
+        growth: parseFloat(monthGrowth.toFixed(1)),
+      },
+      monthly: monthly.map((m: any) => ({
+        ...m,
+        gross: parseFloat(m.gross),
+        fees:  parseFloat(m.fees),
+        net:   parseFloat(m.net),
+      })),
+      history,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao buscar rendimentos" });
+  }
+});
 
 // PUT /api/workers/me
 router.put("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
